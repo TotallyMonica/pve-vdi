@@ -4,7 +4,7 @@ set -e
 # Set auth options
 SECRET='c523b89e-913c-4e40-a018-de3afd4577e5'
 TOKEN_ID='_pve_service_vdi@pve!vdiclient'
-PASSWORD='gbF2Oru!uzAr42bn&Wahs#0E*$yk*l$b'
+PASSWORD='Lhfd24XSNdsTtx9Rr85WM3QBxF5DkAX6'
 USERNAME='_pve_service_vdi@pve'
 
 # Set VM IDs
@@ -23,7 +23,8 @@ PROXY="172.16.200.152"
 #The rest of the script from Proxmox
 NODE="${NODE%%\.*}"
 
-DATA="$(curl -f -s -S -k --data-urlencode "username=$USERNAME" --data-urlencode "password=\"$PASSWORD\"" "https://$PROXY:8006/api2/json/access/ticket")"
+echo "Authenticating"
+DATA="$(curl -f -s -S -k --data-urlencode "username=$USERNAME" --data-urlencode "password=$PASSWORD" "https://$PROXY:8006/api2/json/access/ticket")"
 
 echo "AUTH OK"
 
