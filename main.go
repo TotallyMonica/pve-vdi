@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -25,6 +26,15 @@ type ProxmoxAuth struct {
 		CSRF   string `json:"CSRFPreventionToken"`
 		Ticket string `json:"ticket"`
 	} `json:"data"`
+}
+
+type ProxmoxVmList struct {
+	Data []struct {
+		Id     string `json:"id"`
+		Status string `json:"status"`
+		Name   string `json:"name"`
+		Node   string `json:"node"`
+	}
 }
 
 func login() ProxmoxCreds {
@@ -51,7 +61,7 @@ func login() ProxmoxCreds {
 	return creds
 }
 
-func connectToProxmox(creds ProxmoxCreds) {
+func connectToProxmox(creds ProxmoxCreds) ProxmoxAuth {
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
@@ -85,10 +95,50 @@ func connectToProxmox(creds ProxmoxCreds) {
 		log.Fatalf("Error while unmarshalling response: %+v\n", err)
 	}
 
-	fmt.Printf("Response: %s\n", parsedResponse.Data)
+	return parsedResponse
+}
+
+func getAvailableVMList(creds ProxmoxCreds, token ProxmoxAuth) ProxmoxVmList {
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	authCookie := &http.Cookie{
+		Name:  "PVEAuthCookie",
+		Value: token.Data.Ticket,
+	}
+
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://%s:8006/api2/json/cluster/resources/?type=vm", creds.Address), nil)
+	if err != nil {
+		fmt.Errorf("error while creating request: %+v\n", err)
+	}
+
+	req.AddCookie(authCookie)
+	req.Header.Add("CSRFPreventionToken", token.Data.CSRF)
+
+	resp, _ := client.Do(req)
+	response, _ := io.ReadAll(resp.Body)
+
+	var availableVMs ProxmoxVmList
+	_ = json.Unmarshal(response, &availableVMs)
+
+	return availableVMs
 }
 
 func main() {
 	creds := login()
-	connectToProxmox(creds)
+	token := connectToProxmox(creds)
+	vms := getAvailableVMList(creds, token)
+
+	fmt.Printf("Enter the number of the VM you'd like to connect to:\n")
+	for _, vm := range vms.Data {
+		fmt.Printf("%s: %s\n", strings.Split(vm.Id, "/")[1], vm.Name)
+	}
+
+	var id int
+	_, _ = fmt.Scanf("%04d", &id)
+	fmt.Printf("Read: %d\n", id)
 }
