@@ -20,6 +20,13 @@ type ProxmoxCreds struct {
 	Address  string `json:"server"`
 }
 
+type ProxmoxAuth struct {
+	Data struct {
+		CSRF   string `json:"CSRFPreventionToken"`
+		Ticket string `json:"ticket"`
+	} `json:"data"`
+}
+
 func login() ProxmoxCreds {
 	// Open credentials file
 	credsHandler, err := os.Open("creds.json")
@@ -71,7 +78,14 @@ func connectToProxmox(creds ProxmoxCreds) {
 		log.Fatalf("Error while parsing response: %+v\n", err)
 	}
 
-	fmt.Printf("Response: %s\n", token)
+	var parsedResponse ProxmoxAuth
+
+	err = json.Unmarshal(token, &parsedResponse)
+	if err != nil {
+		log.Fatalf("Error while unmarshalling response: %+v\n", err)
+	}
+
+	fmt.Printf("Response: %s\n", parsedResponse.Data)
 }
 
 func main() {
