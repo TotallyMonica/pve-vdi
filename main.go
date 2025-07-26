@@ -17,8 +17,8 @@ import (
 type ProxmoxCreds struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
-	Server   string `json:"host"`
-	Address  string `json:"server"`
+	Server   string `json:"node"`
+	Address  string `json:"proxy"`
 }
 
 type ProxmoxAuth struct {
@@ -37,7 +37,7 @@ type ProxmoxVmList struct {
 	}
 }
 
-func login() ProxmoxCreds {
+func login() (ProxmoxCreds, error) {
 	// Open credentials file
 	credsHandler, err := os.Open("creds.json")
 	if err != nil {
@@ -58,10 +58,10 @@ func login() ProxmoxCreds {
 		log.Fatalf("error while unmarshalling json: %+v\n", err)
 	}
 
-	return creds
+	return creds, nil
 }
 
-func connectToProxmox(creds ProxmoxCreds) ProxmoxAuth {
+func connectToProxmox(creds ProxmoxCreds) (ProxmoxAuth, error) {
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
@@ -73,7 +73,7 @@ func connectToProxmox(creds ProxmoxCreds) ProxmoxAuth {
 	data.Set("password", creds.Password)
 	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s:8006/api2/json/access/ticket", creds.Address), bytes.NewBufferString(data.Encode()))
 	if err != nil {
-		fmt.Errorf("error while creating request: %+v\n", err)
+		log.Fatalf("error while creating request: %+v\n", err)
 	}
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -95,10 +95,10 @@ func connectToProxmox(creds ProxmoxCreds) ProxmoxAuth {
 		log.Fatalf("Error while unmarshalling response: %+v\n", err)
 	}
 
-	return parsedResponse
+	return parsedResponse, nil
 }
 
-func getAvailableVMList(creds ProxmoxCreds, token ProxmoxAuth) ProxmoxVmList {
+func getAvailableVMList(creds ProxmoxCreds, token ProxmoxAuth) (ProxmoxVmList, error) {
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
@@ -113,7 +113,7 @@ func getAvailableVMList(creds ProxmoxCreds, token ProxmoxAuth) ProxmoxVmList {
 
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://%s:8006/api2/json/cluster/resources/?type=vm", creds.Address), nil)
 	if err != nil {
-		fmt.Errorf("error while creating request: %+v\n", err)
+		log.Fatalf("error while creating request: %+v\n", err)
 	}
 
 	req.AddCookie(authCookie)
@@ -125,13 +125,63 @@ func getAvailableVMList(creds ProxmoxCreds, token ProxmoxAuth) ProxmoxVmList {
 	var availableVMs ProxmoxVmList
 	_ = json.Unmarshal(response, &availableVMs)
 
-	return availableVMs
+	return availableVMs, nil
+}
+
+func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, id int) error {
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	authCookie := &http.Cookie{
+		Name:  "PVEAuthCookie",
+		Value: token.Data.Ticket,
+	}
+
+	data := url.Values{}
+	data.Add("proxy", creds.Address)
+
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s:8006/api2/spiceconfig/nodes/%s/qemu/%d/spiceproxy", creds.Address, creds.Server, id), bytes.NewBufferString(data.Encode()))
+	if err != nil {
+		return fmt.Errorf("error while creating request: %+v\n", err)
+	}
+
+	req.AddCookie(authCookie)
+	req.Header.Add("CSRFPreventionToken", token.Data.CSRF)
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("error while performing request: %+v\n", err)
+	}
+
+	response, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("error while reading request: %+v\n", err)
+	}
+
+	filename := os.Getenv("VDI_TEMPFILE_FILENAME")
+
+	spiceHandler, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return fmt.Errorf("error while creating file %s: %+v\n", filename, err)
+	}
+
+	_, err = spiceHandler.Write(response)
+	if err != nil {
+		return fmt.Errorf("error while writing connection info to %s: %+v\n", filename, err)
+	}
+
+	return nil
 }
 
 func main() {
-	creds := login()
-	token := connectToProxmox(creds)
-	vms := getAvailableVMList(creds, token)
+	creds, _ := login()
+	token, _ := connectToProxmox(creds)
+	vms, _ := getAvailableVMList(creds, token)
 
 	fmt.Printf("Enter the number of the VM you'd like to connect to:\n")
 	for _, vm := range vms.Data {
@@ -139,6 +189,12 @@ func main() {
 	}
 
 	var id int
-	_, _ = fmt.Scanf("%04d", &id)
+	id = 1001
+	//_, _ = fmt.Scanf("%04d", &id)
 	fmt.Printf("Read: %d\n", id)
+
+	err := connectToSpice(creds, token, id)
+	if err != nil {
+		log.Fatalf("Could not connect to spice client: %+v\n", err)
+	}
 }
