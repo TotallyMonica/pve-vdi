@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -31,13 +30,16 @@ type ProxmoxAuth struct {
 	} `json:"data"`
 }
 
+type ProxmoxVm struct {
+	Id       string `json:"id"`
+	Status   string `json:"status"`
+	Name     string `json:"name"`
+	Node     string `json:"node"`
+	VmNumber int
+}
+
 type ProxmoxVmList struct {
-	Data []struct {
-		Id     string `json:"id"`
-		Status string `json:"status"`
-		Name   string `json:"name"`
-		Node   string `json:"node"`
-	}
+	Data []ProxmoxVm
 }
 
 func login() (ProxmoxCreds, error) {
@@ -142,12 +144,47 @@ func getAvailableVMList(creds ProxmoxCreds, token ProxmoxAuth) (ProxmoxVmList, e
 	return availableVMs, nil
 }
 
-func startVM(creds ProxmoxCreds, token ProxmoxAuth, vms ProxmoxVmList, id int) error {
+func startVM(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm, id int) error {
 	// Start VM framework
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	authCookie := &http.Cookie{
+		Name:  "PVEAuthCookie",
+		Value: token.Data.Ticket,
+	}
+
+	data := url.Values{}
+
+	data.Add("proxy", creds.Address)
+	apiUrl := fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/%s/status/start", creds.Address, vm.Node, vm.Id)
+
+	req, err := http.NewRequest(http.MethodPost, apiUrl, bytes.NewBufferString(data.Encode()))
+	if err != nil {
+		return fmt.Errorf("error while creating request: %+v\nurl: %s\n", err, apiUrl)
+	}
+
+	req.AddCookie(authCookie)
+	req.Header.Add("CSRFPreventionToken", token.Data.CSRF)
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("error while performing request: %+v\n", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("unexpected status code %d received: %s\nurl: %s\n", resp.StatusCode, resp.Status, apiUrl)
+	}
+
 	return nil
 }
 
-func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, vms ProxmoxVmList, id int) error {
+func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm, id int) error {
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
@@ -163,20 +200,7 @@ func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, vms ProxmoxVmList, id
 	data := url.Values{}
 	data.Add("proxy", creds.Address)
 
-	var node string
-	for _, vm := range vms.Data {
-		parsedId, err := strconv.Atoi(strings.Split(vm.Id, "/")[1])
-		if err != nil {
-			continue
-		}
-
-		if parsedId == id {
-			node = vm.Node
-			break
-		}
-	}
-
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s:8006/api2/spiceconfig/nodes/%s/qemu/%d/spiceproxy", creds.Address, node, id), bytes.NewBufferString(data.Encode()))
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s:8006/api2/spiceconfig/nodes/%s/qemu/%d/spiceproxy", creds.Address, vm.Node, id), bytes.NewBufferString(data.Encode()))
 	if err != nil {
 		return fmt.Errorf("error while creating request: %+v\n", err)
 	}
@@ -190,11 +214,13 @@ func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, vms ProxmoxVmList, id
 		return fmt.Errorf("error while performing request: %+v\n", err)
 	}
 
-	if resp.StatusCode == 500 && resp.Status == fmt.Sprintf("VM %d not running") {
-		startVM(creds, token, vms, id)
-	}
-
-	if resp.StatusCode != 200 {
+	if resp.StatusCode == 500 {
+		err = startVM(creds, token, vm, id)
+		if err != nil {
+			return fmt.Errorf("error while starting VM: %+v\n", err)
+		}
+		return connectToSpice(creds, token, vm, id)
+	} else if resp.StatusCode != 200 {
 		return fmt.Errorf("unexpected status %d received: %s\n", resp.StatusCode, resp.Status)
 	}
 
@@ -235,9 +261,12 @@ func main() {
 	_, _ = fmt.Scanf("%04d", &id)
 	fmt.Printf("Read: %d\n", id)
 
-	err = connectToSpice(creds, token, vms, id)
-	if err != nil {
-		log.Fatalf("Could not connect to spice client: %+v\n", err)
+	for _, vm := range vms.Data {
+		err = connectToSpice(creds, token, vm, id)
+		if err != nil {
+			log.Fatalf("Could not connect to spice client: %+v\n", err)
+		}
+		break
 	}
 
 	cmd := exec.Command("remote-viewer", "-k", "--kiosk-quit", "on-disconnect", os.Getenv("VDI_TEMPFILE_FILENAME"))
