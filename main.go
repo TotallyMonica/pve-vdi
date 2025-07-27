@@ -146,7 +146,7 @@ func startVM(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm, id int) error 
 
 	apiUrl := fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/%s/status/start", creds.Address, vm.Node, vm.Id)
 
-	req, err := http.NewRequest(http.MethodPost, apiUrl, bytes.NewBufferString(data.Encode()))
+	req, err := http.NewRequest(http.MethodPost, apiUrl, nil)
 	if err != nil {
 		return fmt.Errorf("error while creating request: %+v\nurl: %s\n", err, apiUrl)
 	}
