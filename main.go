@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -308,11 +310,11 @@ func main() {
 		}
 	}
 
-	//cmd := exec.Command("remote-viewer", "-k", "--kiosk-quit", "on-disconnect", os.Getenv("VDI_TEMPFILE_FILENAME"))
-	//if errors.Is(cmd.Err, exec.ErrDot) {
-	//	cmd.Err = nil
-	//}
-	//if err := cmd.Run(); err != nil {
-	//	log.Fatalf("Error while executing thin client profile: %+v\n", err)
-	//}
+	cmd := exec.Command("remote-viewer", "-k", "--kiosk-quit", "on-disconnect", os.Getenv("VDI_TEMPFILE_FILENAME"))
+	if errors.Is(cmd.Err, exec.ErrDot) {
+		cmd.Err = nil
+	}
+	if err := cmd.Run(); err != nil {
+		log.Fatalf("Error while executing thin client profile: %+v\n", err)
+	}
 }
