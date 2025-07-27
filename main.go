@@ -62,20 +62,25 @@ func login() (ProxmoxCreds, error) {
 	// Open credentials file
 	credsHandler, err := os.Open("creds.json")
 	if err != nil {
-		log.Fatalf("error while openings creds file: %+v\n", err)
+		return ProxmoxCreds{}, fmt.Errorf("error while openings creds file: %+v\n", err)
 	}
-	defer credsHandler.Close()
+	defer func(credsHandler *os.File) {
+		err := credsHandler.Close()
+		if err != nil {
+			log.Fatalf("error while closing login credentials handler: %+v\n", err)
+		}
+	}(credsHandler)
 
 	// Cread credentials data
 	credsData, err := io.ReadAll(credsHandler)
 	if err != nil {
-		log.Fatalf("error while reading credentials: %+v\n", err)
+		return ProxmoxCreds{}, fmt.Errorf("error while reading credentials: %+v\n", err)
 	}
 
 	// Parse credentials
 	err = json.Unmarshal(credsData, &creds)
 	if err != nil {
-		log.Fatalf("error while unmarshalling json: %+v\n", err)
+		return ProxmoxCreds{}, fmt.Errorf("error while unmarshalling json: %+v\n", err)
 	}
 
 	return creds, nil
@@ -272,7 +277,12 @@ func main() {
 			log.Fatalf("Failed to open key log file: %v", err)
 		}
 
-		defer keyLogFile.Close()
+		defer func(keyLogFile *os.File) {
+			err := keyLogFile.Close()
+			if err != nil {
+				log.Fatalf("Error while closing key log file: %+v\n", err)
+			}
+		}(keyLogFile)
 
 		client = &http.Client{
 			Timeout: 10 * time.Second,
@@ -282,8 +292,14 @@ func main() {
 		}
 	}
 
-	creds, _ := login()
-	token, _ := connectToProxmox(creds)
+	creds, err := login()
+	if err != nil {
+		log.Fatalf("Error while getting Proxmox credentials: %+v\n", err)
+	}
+	token, err := connectToProxmox(creds)
+	if err != nil {
+		log.Fatalf("Error while logging into Proxmox: %+v\n", err)
+	}
 	vms, err := getAvailableVMList(creds, token)
 	if err != nil {
 		log.Fatalf("Error while getting available VMs: %+v\n", err)
@@ -297,8 +313,10 @@ func main() {
 	}
 
 	var id int
-	_, _ = fmt.Scanf("%04d", &id)
-	fmt.Printf("Read: %d\n", id)
+	_, err = fmt.Scanf("%04d", &id)
+	if err != nil {
+		log.Fatalf("Error while parsing user input: %+v\n", err)
+	}
 
 	for _, vm := range vms.Data {
 		if strings.Contains(vm.Id, strconv.Itoa(id)) {
