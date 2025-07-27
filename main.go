@@ -40,6 +40,8 @@ type ProxmoxVmList struct {
 }
 
 func login() (ProxmoxCreds, error) {
+	var creds ProxmoxCreds
+
 	// Open credentials file
 	credsHandler, err := os.Open("creds.json")
 	if err != nil {
@@ -54,7 +56,6 @@ func login() (ProxmoxCreds, error) {
 	}
 
 	// Parse credentials
-	var creds ProxmoxCreds
 	err = json.Unmarshal(credsData, &creds)
 	if err != nil {
 		log.Fatalf("error while unmarshalling json: %+v\n", err)
@@ -191,8 +192,7 @@ func main() {
 	}
 
 	var id int
-	id = 1001
-	//_, _ = fmt.Scanf("%04d", &id)
+	_, _ = fmt.Scanf("%04d", &id)
 	fmt.Printf("Read: %d\n", id)
 
 	err := connectToSpice(creds, token, id)
