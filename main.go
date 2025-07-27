@@ -191,7 +191,7 @@ func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm, id int)
 		return fmt.Errorf("error while performing request: %+v\n", err)
 	}
 
-	if resp.StatusCode == 500 {
+	if resp.StatusCode == 500 && strings.Contains(resp.Status, "not running") {
 		err = startVM(creds, token, vm, id)
 		if err != nil {
 			return fmt.Errorf("error while starting VM: %+v\n", err)
