@@ -4,14 +4,12 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -145,6 +143,38 @@ func getAvailableVMList(creds ProxmoxCreds, token ProxmoxAuth) (ProxmoxVmList, e
 	return availableVMs, nil
 }
 
+func getVmHealth(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm) (string, error) {
+	authCookie := &http.Cookie{
+		Name:  "PVEAuthCookie",
+		Value: token.Data.Ticket,
+	}
+
+	apiUrl := fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/%s/agent/ping", creds.Address, vm.Node, vm.Id)
+
+	req, err := http.NewRequest(http.MethodPost, apiUrl, nil)
+	if err != nil {
+		return "", fmt.Errorf("error while creating request: %+v\nurl: %s\n", err, apiUrl)
+	}
+
+	req.AddCookie(authCookie)
+	req.Header.Add("CSRFPreventionToken", token.Data.CSRF)
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("error while performing request: %+v\n", err)
+	}
+	fmt.Printf("Status from VM %s: %s\n", vm.Id, resp.Status)
+
+	if resp.StatusCode == 500 && strings.Contains(resp.Status, "is not running") {
+		return getVmHealth(creds, token, vm)
+	} else if resp.StatusCode != 200 {
+		return "", fmt.Errorf("unexpected status code %d from response: %s\n", resp.StatusCode, resp.Status)
+	}
+
+	return "", nil
+}
+
 func startVM(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm, id int) error {
 	authCookie := &http.Cookie{
 		Name:  "PVEAuthCookie",
@@ -202,6 +232,12 @@ func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm, id int)
 		if err != nil {
 			return fmt.Errorf("error while starting VM: %+v\n", err)
 		}
+
+		_, err = getVmHealth(creds, token, vm)
+		if err != nil {
+			return fmt.Errorf("error while getting health for VM: %+v\n", err)
+		}
+
 		return connectToSpice(creds, token, vm, id)
 	} else if resp.StatusCode != 200 {
 		return fmt.Errorf("unexpected status %d received: %s\n", resp.StatusCode, resp.Status)
@@ -272,11 +308,11 @@ func main() {
 		}
 	}
 
-	cmd := exec.Command("remote-viewer", "-k", "--kiosk-quit", "on-disconnect", os.Getenv("VDI_TEMPFILE_FILENAME"))
-	if errors.Is(cmd.Err, exec.ErrDot) {
-		cmd.Err = nil
-	}
-	if err := cmd.Run(); err != nil {
-		log.Fatalf("Error while executing thin client profile: %+v\n", err)
-	}
+	//cmd := exec.Command("remote-viewer", "-k", "--kiosk-quit", "on-disconnect", os.Getenv("VDI_TEMPFILE_FILENAME"))
+	//if errors.Is(cmd.Err, exec.ErrDot) {
+	//	cmd.Err = nil
+	//}
+	//if err := cmd.Run(); err != nil {
+	//	log.Fatalf("Error while executing thin client profile: %+v\n", err)
+	//}
 }
