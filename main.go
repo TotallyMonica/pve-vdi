@@ -221,6 +221,22 @@ func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm, id int)
 }
 
 func main() {
+	if _, keyExists := os.LookupEnv("SSLKEYLOGFILE"); keyExists {
+		keyLogFile, err := os.OpenFile("tls_key_log.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+		if err != nil {
+			log.Fatalf("Failed to open key log file: %v", err)
+		}
+
+		defer keyLogFile.Close()
+
+		client = &http.Client{
+			Timeout: 10 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true, KeyLogWriter: keyLogFile},
+			},
+		}
+	}
+
 	creds, _ := login()
 	token, _ := connectToProxmox(creds)
 	vms, err := getAvailableVMList(creds, token)
