@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -254,11 +255,13 @@ func main() {
 	fmt.Printf("Read: %d\n", id)
 
 	for _, vm := range vms.Data {
-		err = connectToSpice(creds, token, vm, id)
-		if err != nil {
-			log.Fatalf("Could not connect to spice client: %+v\n", err)
+		if strings.Contains(vm.Id, strconv.Itoa(id)) {
+			err = connectToSpice(creds, token, vm, id)
+			if err != nil {
+				log.Fatalf("Could not connect to spice client: %+v\n", err)
+			}
+			break
 		}
-		break
 	}
 
 	cmd := exec.Command("remote-viewer", "-k", "--kiosk-quit", "on-disconnect", os.Getenv("VDI_TEMPFILE_FILENAME"))
