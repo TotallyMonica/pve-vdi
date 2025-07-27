@@ -116,17 +116,27 @@ func getAvailableVMList(creds ProxmoxCreds, token ProxmoxAuth) (ProxmoxVmList, e
 
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://%s:8006/api2/json/cluster/resources/?type=vm", creds.Address), nil)
 	if err != nil {
-		log.Fatalf("error while creating request: %+v\n", err)
+		return ProxmoxVmList{}, fmt.Errorf("error while creating request: %+v\n", err)
 	}
 
 	req.AddCookie(authCookie)
 	req.Header.Add("CSRFPreventionToken", token.Data.CSRF)
 
-	resp, _ := client.Do(req)
-	response, _ := io.ReadAll(resp.Body)
+	resp, err := client.Do(req)
+	if err != nil {
+		return ProxmoxVmList{}, fmt.Errorf("error while performing request: %+v\n", err)
+	}
+
+	response, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ProxmoxVmList{}, fmt.Errorf("error while reading response: %+v\n", err)
+	}
 
 	var availableVMs ProxmoxVmList
-	_ = json.Unmarshal(response, &availableVMs)
+	err = json.Unmarshal(response, &availableVMs)
+	if err != nil {
+		return ProxmoxVmList{}, fmt.Errorf("error while unmarshalling json: %+v\n", err)
+	}
 
 	return availableVMs, nil
 }
@@ -184,7 +194,10 @@ func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, id int) error {
 func main() {
 	creds, _ := login()
 	token, _ := connectToProxmox(creds)
-	vms, _ := getAvailableVMList(creds, token)
+	vms, err := getAvailableVMList(creds, token)
+	if err != nil {
+		log.Fatalf("Error while getting available VMs: %+v\n", err)
+	}
 
 	fmt.Printf("Enter the number of the VM you'd like to connect to:\n")
 	for _, vm := range vms.Data {
