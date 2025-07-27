@@ -24,6 +24,11 @@ type ProxmoxCreds struct {
 	Address  string `json:"proxy"`
 }
 
+type ProxmoxHost struct {
+	Name    string
+	Address string
+}
+
 type ProxmoxAuth struct {
 	Data struct {
 		CSRF   string `json:"CSRFPreventionToken"`
@@ -36,6 +41,7 @@ type ProxmoxVm struct {
 	Status   string `json:"status"`
 	Name     string `json:"name"`
 	Node     string `json:"node"`
+	Type     string `json:"type"`
 	VmNumber int
 }
 
@@ -112,7 +118,7 @@ func getAvailableVMList(creds ProxmoxCreds, token ProxmoxAuth) (ProxmoxVmList, e
 		Value: token.Data.Ticket,
 	}
 
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://%s:8006/api2/json/cluster/resources/?type=vm", creds.Address), nil)
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://%s:8006/api2/json/cluster/resources/", creds.Address), nil)
 	if err != nil {
 		return ProxmoxVmList{}, fmt.Errorf("error while creating request: %+v\n", err)
 	}
@@ -247,7 +253,9 @@ func main() {
 
 	fmt.Printf("Enter the number of the VM you'd like to connect to:\n")
 	for _, vm := range vms.Data {
-		fmt.Printf("%s: %s\n", strings.Split(vm.Id, "/")[1], vm.Name)
+		if strings.Contains(vm.Type, "qemu") {
+			fmt.Printf("%s: %s\n", strings.Split(vm.Id, "/")[1], vm.Name)
+		}
 	}
 
 	var id int
