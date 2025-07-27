@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -141,7 +142,12 @@ func getAvailableVMList(creds ProxmoxCreds, token ProxmoxAuth) (ProxmoxVmList, e
 	return availableVMs, nil
 }
 
-func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, id int) error {
+func startVM(creds ProxmoxCreds, token ProxmoxAuth, vms ProxmoxVmList, id int) error {
+	// Start VM framework
+	return nil
+}
+
+func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, vms ProxmoxVmList, id int) error {
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
@@ -157,7 +163,20 @@ func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, id int) error {
 	data := url.Values{}
 	data.Add("proxy", creds.Address)
 
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s:8006/api2/spiceconfig/nodes/%s/qemu/%d/spiceproxy", creds.Address, creds.Server, id), bytes.NewBufferString(data.Encode()))
+	var node string
+	for _, vm := range vms.Data {
+		parsedId, err := strconv.Atoi(strings.Split(vm.Id, "/")[1])
+		if err != nil {
+			continue
+		}
+
+		if parsedId == id {
+			node = vm.Node
+			break
+		}
+	}
+
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s:8006/api2/spiceconfig/nodes/%s/qemu/%d/spiceproxy", creds.Address, node, id), bytes.NewBufferString(data.Encode()))
 	if err != nil {
 		return fmt.Errorf("error while creating request: %+v\n", err)
 	}
@@ -169,6 +188,14 @@ func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, id int) error {
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("error while performing request: %+v\n", err)
+	}
+
+	if resp.StatusCode == 500 && resp.Status == fmt.Sprintf("VM %d not running") {
+		startVM(creds, token, vms, id)
+	}
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("unexpected status %d received: %s\n", resp.StatusCode, resp.Status)
 	}
 
 	response, err := io.ReadAll(resp.Body)
@@ -208,7 +235,7 @@ func main() {
 	_, _ = fmt.Scanf("%04d", &id)
 	fmt.Printf("Read: %d\n", id)
 
-	err := connectToSpice(creds, token, id)
+	err = connectToSpice(creds, token, vms, id)
 	if err != nil {
 		log.Fatalf("Could not connect to spice client: %+v\n", err)
 	}
