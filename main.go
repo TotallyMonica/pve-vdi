@@ -42,6 +42,13 @@ type ProxmoxVmList struct {
 	Data []ProxmoxVm
 }
 
+var client = &http.Client{
+	Timeout: 10 * time.Second,
+	Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	},
+}
+
 func login() (ProxmoxCreds, error) {
 	var creds ProxmoxCreds
 
@@ -68,12 +75,6 @@ func login() (ProxmoxCreds, error) {
 }
 
 func connectToProxmox(creds ProxmoxCreds) (ProxmoxAuth, error) {
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
 	data := url.Values{}
 	data.Set("username", creds.Username)
 	data.Set("password", creds.Password)
@@ -105,13 +106,6 @@ func connectToProxmox(creds ProxmoxCreds) (ProxmoxAuth, error) {
 }
 
 func getAvailableVMList(creds ProxmoxCreds, token ProxmoxAuth) (ProxmoxVmList, error) {
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-
 	authCookie := &http.Cookie{
 		Name:  "PVEAuthCookie",
 		Value: token.Data.Ticket,
@@ -145,22 +139,11 @@ func getAvailableVMList(creds ProxmoxCreds, token ProxmoxAuth) (ProxmoxVmList, e
 }
 
 func startVM(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm, id int) error {
-	// Start VM framework
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-
 	authCookie := &http.Cookie{
 		Name:  "PVEAuthCookie",
 		Value: token.Data.Ticket,
 	}
 
-	data := url.Values{}
-
-	data.Add("proxy", creds.Address)
 	apiUrl := fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/%s/status/start", creds.Address, vm.Node, vm.Id)
 
 	req, err := http.NewRequest(http.MethodPost, apiUrl, bytes.NewBufferString(data.Encode()))
@@ -185,13 +168,6 @@ func startVM(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm, id int) error 
 }
 
 func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm, id int) error {
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-
 	authCookie := &http.Cookie{
 		Name:  "PVEAuthCookie",
 		Value: token.Data.Ticket,
