@@ -168,15 +168,7 @@ func getVmHealth(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm) (string, e
 	if err != nil {
 		return "", fmt.Errorf("error while performing request: %+v\n", err)
 	}
-	fmt.Printf("Status from VM %s: %s\n", vm.Id, resp.Status)
-
-	if resp.StatusCode == 500 && strings.Contains(resp.Status, "is not running") {
-		return getVmHealth(creds, token, vm)
-	} else if resp.StatusCode != 200 {
-		return "", fmt.Errorf("unexpected status code %d from response: %s\n", resp.StatusCode, resp.Status)
-	}
-
-	return "", nil
+	return resp.Status, nil
 }
 
 func startVM(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm, id int) error {
@@ -235,11 +227,6 @@ func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm, id int)
 		err = startVM(creds, token, vm, id)
 		if err != nil {
 			return fmt.Errorf("error while starting VM: %+v\n", err)
-		}
-
-		_, err = getVmHealth(creds, token, vm)
-		if err != nil {
-			return fmt.Errorf("error while getting health for VM: %+v\n", err)
 		}
 
 		return connectToSpice(creds, token, vm, id)
