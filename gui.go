@@ -2,7 +2,8 @@ package main
 
 import (
 	"errors"
-	"github.com/mappu/miqt/qt"
+	"fmt"
+	"github.com/mappu/miqt/qt6"
 	"log"
 	"os"
 	"os/exec"
@@ -11,34 +12,46 @@ import (
 )
 
 func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
-	qt.NewQApplication(os.Args)
+	qt6.NewQApplication(os.Args)
 	var err error
 
-	widget := qt.NewQWidget2()
-	defer widget.Delete()
+	// Create the home widget
+	homeWidget := qt6.NewQWidget2()
+	defer homeWidget.Delete()
 
-	widget.SetWindowTitle("Proxmox VDI Client")
+	homeWidget.SetWindowTitle("Proxmox VDI Client")
 
-	vbox := qt.NewQVBoxLayout(widget)
+	vbox := qt6.NewQVBoxLayout(homeWidget)
 
-	header := qt.NewQLabel3("Choose the VM that you would like to connect to")
+	header := qt6.NewQLabel3("Choose the VM that you would like to connect to")
 	header.Show()
 	vbox.AddChildWidget(header.QWidget)
+	vbox.AddSpacing(header.Height())
 
-	buttonList := make([]*qt.QPushButton, 0)
+	buttonList := make([]*qt6.QPushButton, 0)
 
 	for _, vm := range vms.Data {
 		if strings.Contains(vm.Type, "qemu") {
-			vmButton := qt.NewQPushButton3(vm.Name)
+			vmButton := qt6.NewQPushButton3(vm.Name)
 			vm.VmNumber, err = strconv.Atoi(strings.Split(vm.Id, "/")[1])
 			if err != nil {
 				log.Fatalf("Error while parsing VM ID %s: %+v\n", vm.Id, err)
 			}
 
 			vmButton.OnPressed(func() {
+
 				err := connectToSpice(creds, token, vm, vm.VmNumber)
 				if err != nil {
 					log.Fatalf("Could not connect to spice client: %+v\n", err)
+				}
+
+				status, err := getVmHealth(creds, token, vm)
+				fmt.Printf("Status: %s\n", status)
+
+				for !strings.Contains(status, "200 OK") {
+					//healthCheckStatus.SetText(status)
+					status, err = getVmHealth(creds, token, vm)
+					fmt.Printf("Status: %s\n", status)
 				}
 
 				// Create USB redirect rules
@@ -75,7 +88,7 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 					log.Fatalf("Error while executing thin client profile: %+v\n", err)
 				}
 
-				qt.QApplication_CloseAllWindows()
+				qt6.QApplication_CloseAllWindows()
 			})
 
 			vmButton.SetFixedWidth(320)
@@ -87,6 +100,6 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 		vbox.AddWidget(btn.QWidget)
 	}
 
-	widget.Show()
-	qt.QApplication_Exec()
+	homeWidget.Show()
+	qt6.QApplication_Exec()
 }
