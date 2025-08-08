@@ -2,11 +2,16 @@ package main
 
 import (
 	"fmt"
+	//"fmt"
 	"github.com/mappu/miqt/qt6"
 	"log"
-	"os"
 	"strconv"
 	"strings"
+
+	//"log"
+	"os"
+	//"strconv"
+	//"strings"
 )
 
 func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
@@ -18,13 +23,17 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 	homeWidget.SetWindowTitle("Proxmox VDI Client")
 
 	// Build the layout
-	vbox := qt6.NewQVBoxLayout2()
+	mainWindowLayout := qt6.NewQVBoxLayout2()
 
 	// Create header and add to layout
 	header := qt6.NewQLabel3("Choose the VM that you would like to connect to")
 	header.Show()
-	vbox.AddWidget(header.QWidget)
-	vbox.AddSpacing(header.Height() * 2)
+	mainWindowLayout.AddWidget(header.QWidget)
+	mainWindowLayout.AddSpacing(header.Height() * 2)
+
+	// Create container widget
+	testWidget := qt6.NewQWidget(homeWidget.QWidget)
+	testWidget.SetLayout(mainWindowLayout.Layout())
 
 	// Create a button for every VM
 	for _, vm := range vms.Data {
@@ -41,45 +50,66 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 
 			// Start the VM (if necessary) and connect to the VM via SPICE.
 			vmButton.OnClicked(func() {
-				// TODO: Spawn a child window giving the status
+				err := startVM(creds, token, vm, vm.VmNumber)
+				if err != nil {
+					return
+				}
 				// Create the child window
 				fmt.Printf("Connecting to %s\n", vmButton.Text())
-				connectingWindow := qt6.NewQMainWindow(homeWidget.QWidget)
-				connectingWidget := qt6.NewQWidget(connectingWindow.QWidget)
-				defer connectingWidget.Delete()
+				connectingWindow := qt6.NewQWidget2()
+				defer connectingWindow.Delete()
+				connectingWindow.SetWindowTitle(fmt.Sprintf("Connecting to %s", vmButton.Text()))
+
+				connectingLayout := qt6.NewQVBoxLayout2()
+
+				// Set connecting container widget settings
+				connectingWidget := qt6.NewQWidget(connectingWindow)
+				connectingWidget.SetLayout(connectingLayout.QLayout)
+
+				// Set window presentation settings
+				homeWidget.SetCentralWidget(connectingWidget)
 
 				// Build the layout for the child window
-				layout := qt6.NewQVBoxLayout(connectingWidget)
 				statusLabel := qt6.NewQLabel2()
 				vmNameLabel := qt6.NewQLabel2()
 
 				// Create the VM Name label
 				vmNameLabel.SetText(fmt.Sprintf("Virtual desktop chosen: %s\n", vmButton.Text()))
 				vmNameLabel.Show()
-				layout.AddChildWidget(vmNameLabel.QWidget)
-				layout.AddSpacing(vmNameLabel.Height() * 2)
+				connectingLayout.AddWidget(vmNameLabel.QWidget)
+				connectingLayout.AddSpacing(vmNameLabel.Height())
+
+				statusLabel.SetText("Status: Starting")
+				statusLabel.Show()
+				connectingLayout.AddWidget(statusLabel.QWidget)
+				connectingLayout.AddSpacing(statusLabel.Height())
 
 				// Create the status label for the child window
-				statusLabel.SetText("Status: Broken")
-				statusLabel.Show()
-				layout.AddChildWidget(statusLabel.QWidget)
-				layout.AddSpacing(statusLabel.Height() * 2)
+				for status, err := getVmHealth(creds, token, vm); err != nil && !strings.Contains(status, "200 OK"); status, err = getVmHealth(creds, token, vm) {
+					statusLabel.SetText("Status: Starting")
+					statusLabel.Show()
+					connectingLayout.AddWidget(statusLabel.QWidget)
+					connectingLayout.AddSpacing(statusLabel.Height())
+				}
 
-				// Set window presentation settings
-				connectingWindow.SetWindowTitle(fmt.Sprintf("Connecting to %s", vmButton.Text()))
-				connectingWindow.SetCentralWidget(connectingWidget)
-				connectingWindow.Show()
+				if err != nil {
+					statusLabel.SetText(fmt.Sprintf("Error: %s\n", err))
+				}
+
+				statusLabel.SetText("Started!")
+
+				err = connectToSpice(creds, token, vm, vm.VmNumber)
+
+				if err != nil {
+					statusLabel.SetText(fmt.Sprintf("Couldn't connect to VM: %s\n", err))
+				}
 			})
 
 			// Add the button to the layout
 			vmButton.SetFixedWidth(320)
-			vbox.AddWidget(vmButton.QWidget)
+			mainWindowLayout.AddWidget(vmButton.QWidget)
 		}
 	}
-
-	// Create container widget
-	testWidget := qt6.NewQWidget(homeWidget.QWidget)
-	testWidget.SetLayout(vbox.Layout())
 
 	// Show the window
 	homeWidget.SetCentralWidget(testWidget)

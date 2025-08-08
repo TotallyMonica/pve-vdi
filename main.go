@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -43,5 +44,9 @@ func main() {
 		log.Fatalf("Error while getting available VMs: %+v\n", err)
 	}
 
-	buildWindow(vms, creds, token)
+	if value, exists := os.LookupEnv("TEST_VM_WINDOW"); exists && (strings.Compare(value, "VM_ONLY") == 0) {
+		spawnChild("Win11")
+	} else {
+		buildWindow(vms, creds, token)
+	}
 }
