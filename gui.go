@@ -1,7 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"os/exec"
+
 	//"fmt"
 	"github.com/mappu/miqt/qt6"
 	"log"
@@ -103,6 +106,44 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 				if err != nil {
 					statusLabel.SetText(fmt.Sprintf("Couldn't connect to VM: %s\n", err))
 				}
+
+				// Create USB redirect rules
+				//redirectRules := make([]string, 0)
+
+				// Block USB HID devices
+				//redirectRules = append(redirectRules, "0x03,-1,-1,-1,0")
+
+				// Block USB Hubs
+				//redirectRules = append(redirectRules, "0x09,-1,-1,-1,0")
+
+				// Allow all USB devices
+				//redirectRules = append(redirectRules, "-1,-1,-1,-1,1")
+
+				// Kiosk Mode
+				vdiArgs := make([]string, 0)
+
+				// Redirect USB rules: Block any HID device from being redirected, allow everything else
+				//vdiArgs = append(vdiArgs, fmt.Sprintf("--spice-usbredir-auto-redirect-filter=%s", strings.Join(redirectRules, "|")))
+
+				// Kiosk mode - Don't allow user to configure anything
+				//vdiArgs = append(vdiArgs, "-k", "--kiosk-quit", "on-disconnect")
+
+				// Full screen, but allow user to configure
+				//vdiArgs = append(vdiArgs, "-f")
+
+				vdiArgs = append(vdiArgs, os.Getenv("VDI_TEMPFILE_FILENAME"))
+				cmd := exec.Command("remote-viewer", vdiArgs...)
+
+				if errors.Is(cmd.Err, exec.ErrDot) {
+					cmd.Err = nil
+				}
+
+				if err := cmd.Run(); err != nil {
+					statusLabel.SetText(fmt.Sprintf("Couldn't connect to VM: %s\n", err))
+					log.Fatalf("Error while executing thin client profile: %+v\n", err)
+				}
+
+				qt6.QCoreApplication_Exit()
 			})
 
 			// Add the button to the layout
