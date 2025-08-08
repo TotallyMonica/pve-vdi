@@ -9,49 +9,29 @@ import (
 	"strings"
 )
 
-func connectingWindow(vmName string) *qt6.QWidget {
-	// Create the child window
-	connectingWidget := qt6.NewQWidget2()
-	defer connectingWidget.Delete()
-
-	// Build the layout for the child window
-	layout := qt6.NewQVBoxLayout(connectingWidget)
-	statusLabel := qt6.NewQLabel2()
-
-	// Create the label for the child window
-	statusLabel.SetText("Status: Broken")
-
-	// Add the widgets with appropriate spacing
-	layout.AddChildWidget(statusLabel.QWidget)
-
-	// Set window presentation settings
-	connectingWidget.SetWindowTitle(fmt.Sprintf("Connecting to %s", vmName))
-
-	return connectingWidget
-}
-
 func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 	qt6.NewQApplication(os.Args)
-	var err error
 
 	// Create the home widget
-	homeWidget := qt6.NewQWidget2()
+	homeWidget := qt6.NewQMainWindow2()
 	defer homeWidget.Delete()
 	homeWidget.SetWindowTitle("Proxmox VDI Client")
 
 	// Build the layout
-	vbox := qt6.NewQVBoxLayout(homeWidget)
+	vbox := qt6.NewQVBoxLayout2()
 
 	// Create header and add to layout
 	header := qt6.NewQLabel3("Choose the VM that you would like to connect to")
 	header.Show()
-	vbox.AddChildWidget(header.QWidget)
-	vbox.AddSpacing(header.Height())
+	vbox.AddWidget(header.QWidget)
+	vbox.AddSpacing(header.Height() * 2)
 
 	// Create a button for every VM
 	for _, vm := range vms.Data {
 		// Ensure it's actually a VM
 		if strings.Contains(vm.Type, "qemu") {
+			var err error
+
 			// Create the button with the text as the name of the VM
 			vmButton := qt6.NewQPushButton3(vm.Name)
 			vm.VmNumber, err = strconv.Atoi(strings.Split(vm.Id, "/")[1])
@@ -60,10 +40,35 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 			}
 
 			// Start the VM (if necessary) and connect to the VM via SPICE.
-			vmButton.OnPressed(func() {
+			vmButton.OnClicked(func() {
 				// TODO: Spawn a child window giving the status
-				connecting := connectingWindow(vmButton.Text())
-				connecting.Show()
+				// Create the child window
+				fmt.Printf("Connecting to %s\n", vmButton.Text())
+				connectingWindow := qt6.NewQMainWindow(homeWidget.QWidget)
+				connectingWidget := qt6.NewQWidget(connectingWindow.QWidget)
+				defer connectingWidget.Delete()
+
+				// Build the layout for the child window
+				layout := qt6.NewQVBoxLayout(connectingWidget)
+				statusLabel := qt6.NewQLabel2()
+				vmNameLabel := qt6.NewQLabel2()
+
+				// Create the VM Name label
+				vmNameLabel.SetText(fmt.Sprintf("Virtual desktop chosen: %s\n", vmButton.Text()))
+				vmNameLabel.Show()
+				layout.AddChildWidget(vmNameLabel.QWidget)
+				layout.AddSpacing(vmNameLabel.Height() * 2)
+
+				// Create the status label for the child window
+				statusLabel.SetText("Status: Broken")
+				statusLabel.Show()
+				layout.AddChildWidget(statusLabel.QWidget)
+				layout.AddSpacing(statusLabel.Height() * 2)
+
+				// Set window presentation settings
+				connectingWindow.SetWindowTitle(fmt.Sprintf("Connecting to %s", vmButton.Text()))
+				connectingWindow.SetCentralWidget(connectingWidget)
+				connectingWindow.Show()
 			})
 
 			// Add the button to the layout
@@ -72,7 +77,12 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 		}
 	}
 
+	// Create container widget
+	testWidget := qt6.NewQWidget(homeWidget.QWidget)
+	testWidget.SetLayout(vbox.Layout())
+
 	// Show the window
+	homeWidget.SetCentralWidget(testWidget)
 	homeWidget.Show()
 	qt6.QApplication_Exec()
 }
