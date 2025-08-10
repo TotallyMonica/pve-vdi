@@ -3,13 +3,15 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"os/exec"
 
-	//"fmt"
-	"github.com/mappu/miqt/qt6"
 	"log"
 	"strconv"
 	"strings"
+
+	//"fmt"
+	"github.com/mappu/miqt/qt6"
 
 	//"log"
 	"os"
@@ -99,9 +101,58 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 					statusLabel.SetText(fmt.Sprintf("Error: %s\n", err))
 				}
 
+				specifiedNode, err := login()
+				var specifiedToken ProxmoxAuth
+
+				if err != nil {
+					statusLabel.SetText(fmt.Sprintf("Error: %s\n", err))
+				}
+
+				// Check if the node the VM is on is the same one as we're logging into
+				if strings.Compare(specifiedNode.Server, vm.Node) != 0 {
+					// Get the network of the first node
+					originalNodeAddrs, err := getNodeAddresses(creds, token)
+					if err != nil {
+						statusLabel.SetText(fmt.Sprintf("Error: %s\n", err))
+						log.Fatalf("Error while getting the IP addresses for Node %s: %+v\n", creds.Server, err)
+					}
+
+					// Try to find the original IP that we were given for the original node
+					var network netip.Prefix
+					for _, addr := range originalNodeAddrs {
+						if strings.Compare(addr.Address, creds.Address) == 0 {
+							network = netip.MustParsePrefix(addr.Cidr)
+						}
+					}
+
+					// Now get the new node's addresses
+					specifiedNode.Server = vm.Node
+					newNodeAddrs, err := getNodeAddresses(specifiedNode, token)
+					if err != nil {
+						statusLabel.SetText(fmt.Sprintf("Error: %s\n", err))
+						log.Fatalf("Error while getting the IP addresses for Node %s: %+v\n", specifiedNode.Server, err)
+					}
+
+					// Compare each of the new node's addresses and see if they are in the original node's network
+					for _, addr := range newNodeAddrs {
+						if strings.Compare(addr.Address, "") != 0 && network.Contains(netip.MustParseAddr(addr.Address)) {
+							specifiedNode.Address = addr.Address
+						}
+					}
+
+					specifiedToken, err = connectToProxmox(specifiedNode)
+					if err != nil {
+						statusLabel.SetText(fmt.Sprintf("Error: %s\n", err))
+						log.Fatalf("Error while connecting to the node %s: %+v\n", specifiedNode.Server, err)
+					}
+				} else {
+					specifiedToken = token
+				}
+
 				statusLabel.SetText("Started!")
 
-				err = connectToSpice(creds, token, vm, vm.VmNumber)
+				// Log in with the required node's credentials
+				err = connectToSpice(specifiedNode, specifiedToken, vm, vm.VmNumber)
 
 				if err != nil {
 					statusLabel.SetText(fmt.Sprintf("Couldn't connect to VM: %s\n", err))
@@ -129,7 +180,7 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 				//vdiArgs = append(vdiArgs, "-k", "--kiosk-quit", "on-disconnect")
 
 				// Full screen, but allow user to configure
-				//vdiArgs = append(vdiArgs, "-f")
+				vdiArgs = append(vdiArgs, "-f")
 
 				vdiArgs = append(vdiArgs, os.Getenv("VDI_TEMPFILE_FILENAME"))
 				cmd := exec.Command("remote-viewer", vdiArgs...)

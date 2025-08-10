@@ -42,6 +42,17 @@ type ProxmoxVm struct {
 	VmNumber int
 }
 
+type rawProxmoxInterfaces struct {
+	Data []ProxmoxInterfaces `json:"data"`
+}
+
+type ProxmoxInterfaces struct {
+	Address   string `json:"address"`
+	Active    int    `json:"active"`
+	Interface string `json:"iface"`
+	Cidr      string `json:"cidr"`
+}
+
 type ProxmoxVmList struct {
 	Data []ProxmoxVm
 }
@@ -252,4 +263,44 @@ func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm, id int)
 	}
 
 	return nil
+}
+
+func getNodeAddresses(creds ProxmoxCreds, token ProxmoxAuth) ([]ProxmoxInterfaces, error) {
+	authCookie := &http.Cookie{
+		Name:  "PVEAuthCookie",
+		Value: token.Data.Ticket,
+	}
+
+	apiUrl := fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/network", creds.Address, creds.Server)
+
+	req, err := http.NewRequest(http.MethodGet, apiUrl, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error while creating request: %+v\nurl: %s\n", err, apiUrl)
+	}
+
+	req.AddCookie(authCookie)
+	req.Header.Add("CSRFPreventionToken", token.Data.CSRF)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error while performing request: %+v\n", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("unexpected status code %d received: %s\nurl: %s\n", resp.StatusCode, resp.Status, apiUrl)
+	}
+
+	interfaces, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("Error while parsing response: %+v\n", err)
+	}
+
+	var parsedResponse rawProxmoxInterfaces
+
+	err = json.Unmarshal(interfaces, &parsedResponse)
+	if err != nil {
+		return nil, fmt.Errorf("Error while unmarshalling response: %+v\n", err)
+	}
+
+	return parsedResponse.Data, nil
 }
