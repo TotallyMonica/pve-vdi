@@ -48,14 +48,15 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 
 			// Create the button with the text as the name of the VM
 			vmButton := qt6.NewQPushButton3(vm.Name)
-			vm.VmNumber, err = strconv.Atoi(strings.Split(vm.Id, "/")[1])
+			vmid, err := strconv.ParseInt(strings.Split(vm.Id, "/")[1], 10, 32)
 			if err != nil {
 				log.Fatalf("Error while parsing VM ID %s: %+v\n", vm.Id, err)
 			}
+			vm.VmNumber = int32(vmid)
 
-			// Start the VM (if necessary) and connect to the VM via SPICE.
+			// Start the VM (if necessary) and connect to vm.VmNumber the VM via SPICE.
 			vmButton.OnClicked(func() {
-				err := startVM(creds, token, vm, vm.VmNumber)
+				err := startVM(creds, token, vm)
 				if err != nil {
 					return
 				}
@@ -152,7 +153,7 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 				statusLabel.SetText("Started!")
 
 				// Log in with the required node's credentials
-				err = connectToSpice(specifiedNode, specifiedToken, vm, vm.VmNumber)
+				err = connectToSpice(specifiedNode, specifiedToken, vm)
 
 				if err != nil {
 					statusLabel.SetText(fmt.Sprintf("Couldn't connect to VM: %s\n", err))

@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	rand2 "math/rand/v2"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -39,7 +41,7 @@ type ProxmoxVm struct {
 	Name     string `json:"name"`
 	Node     string `json:"node"`
 	Type     string `json:"type"`
-	VmNumber int
+	VmNumber int32
 }
 
 type rawProxmoxInterfaces struct {
@@ -182,7 +184,7 @@ func getVmHealth(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm) (string, e
 	return resp.Status, nil
 }
 
-func startVM(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm, id int) error {
+func startVM(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm) error {
 	authCookie := &http.Cookie{
 		Name:  "PVEAuthCookie",
 		Value: token.Data.Ticket,
@@ -211,7 +213,7 @@ func startVM(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm, id int) error 
 	return nil
 }
 
-func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm, id int) error {
+func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm) error {
 	authCookie := &http.Cookie{
 		Name:  "PVEAuthCookie",
 		Value: token.Data.Ticket,
@@ -220,7 +222,7 @@ func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm, id int)
 	data := url.Values{}
 	data.Add("proxy", creds.Address)
 
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s:8006/api2/spiceconfig/nodes/%s/qemu/%d/spiceproxy", creds.Address, vm.Node, id), bytes.NewBufferString(data.Encode()))
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s:8006/api2/spiceconfig/nodes/%s/qemu/%d/spiceproxy", creds.Address, vm.Node, vm.VmNumber), bytes.NewBufferString(data.Encode()))
 	if err != nil {
 		return fmt.Errorf("error while creating request: %+v\n", err)
 	}
@@ -235,12 +237,12 @@ func connectToSpice(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm, id int)
 	}
 
 	if resp.StatusCode == 500 && strings.Contains(resp.Status, "not running") {
-		err = startVM(creds, token, vm, id)
+		err = startVM(creds, token, vm)
 		if err != nil {
 			return fmt.Errorf("error while starting VM: %+v\n", err)
 		}
 
-		return connectToSpice(creds, token, vm, id)
+		return connectToSpice(creds, token, vm)
 	} else if resp.StatusCode != 200 {
 		return fmt.Errorf("unexpected status %d received: %s\n", resp.StatusCode, resp.Status)
 	}
@@ -303,4 +305,44 @@ func getNodeAddresses(creds ProxmoxCreds, token ProxmoxAuth) ([]ProxmoxInterface
 	}
 
 	return parsedResponse.Data, nil
+}
+
+func cloneTemplate(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm) (ProxmoxVm, error) {
+	// Boilerplate create cookie
+	authCookie := &http.Cookie{
+		Name:  "PVEAuthCookie",
+		Value: token.Data.Ticket,
+	}
+
+	var newVm ProxmoxVm
+	var err error
+	newVm.VmNumber = rand2.Int32()
+
+	// Create data to clone the new VM to
+	data := url.Values{}
+	data.Set("newid", strconv.FormatInt(int64(newVm.VmNumber), 10))
+	data.Set("node", newVm.Node)
+	data.Set("vmid", strconv.FormatInt(int64(vm.VmNumber), 10))
+
+	// Create POST request
+	apiUrl := fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/qemu/%d/clone", creds.Address, creds.Server, vm.VmNumber)
+	cloneVmReq, err := http.NewRequest(http.MethodPost, apiUrl, nil)
+	if err != nil {
+		return ProxmoxVm{}, fmt.Errorf("error while creating request: %+v\nurl: %s\n", err, apiUrl)
+	}
+
+	// Add the auth cookies to the request
+	cloneVmReq.AddCookie(authCookie)
+	cloneVmReq.Header.Add("CSRFPreventionToken", token.Data.CSRF)
+
+	// Perform the request
+	cloneVmResp, err := client.Do(cloneVmReq)
+	if err != nil {
+		return ProxmoxVm{}, fmt.Errorf("error while performing request: %+v\n", err)
+	}
+
+	fmt.Printf("Status Code: %d\n", cloneVmResp.StatusCode)
+	fmt.Printf("Status: %s\n", cloneVmResp.Status)
+
+	return newVm, nil
 }
