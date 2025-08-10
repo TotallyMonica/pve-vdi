@@ -42,7 +42,7 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 
 	// Create a button for every VM
 	for _, vm := range vms.Data {
-		// Ensure it's actually a VM
+		// Ensure it's actually a VM we should present to the user
 		if strings.Contains(vm.Type, "qemu") {
 			var err error
 
@@ -90,8 +90,14 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 				connectingLayout.AddWidget(statusLabel.QWidget)
 				connectingLayout.AddSpacing(statusLabel.Height())
 
+				clonedVm, err := cloneTemplate(creds, token, vm)
+				if err != nil {
+					statusLabel.SetText(fmt.Sprintf("Error: %v\n", err))
+					log.Fatalf("Error while cloning VM: %v\n", err)
+				}
+
 				// Create the status label for the child window
-				for status, err := getVmHealth(creds, token, vm); err != nil && !strings.Contains(status, "200 OK"); status, err = getVmHealth(creds, token, vm) {
+				for status, err := getVmHealth(creds, token, clonedVm); err != nil && !strings.Contains(status, "200 OK"); status, err = getVmHealth(creds, token, clonedVm) {
 					statusLabel.SetText("Status: Starting")
 					statusLabel.Show()
 					connectingLayout.AddWidget(statusLabel.QWidget)
@@ -110,7 +116,7 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 				}
 
 				// Check if the node the VM is on is the same one as we're logging into
-				if strings.Compare(specifiedNode.Server, vm.Node) != 0 {
+				if strings.Compare(specifiedNode.Server, clonedVm.Node) != 0 {
 					// Get the network of the first node
 					originalNodeAddrs, err := getNodeAddresses(creds, token)
 					if err != nil {
@@ -127,7 +133,7 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 					}
 
 					// Now get the new node's addresses
-					specifiedNode.Server = vm.Node
+					specifiedNode.Server = clonedVm.Node
 					newNodeAddrs, err := getNodeAddresses(specifiedNode, token)
 					if err != nil {
 						statusLabel.SetText(fmt.Sprintf("Error: %s\n", err))
@@ -153,7 +159,7 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 				statusLabel.SetText("Started!")
 
 				// Log in with the required node's credentials
-				err = connectToSpice(specifiedNode, specifiedToken, vm)
+				err = connectToSpice(specifiedNode, specifiedToken, clonedVm)
 
 				if err != nil {
 					statusLabel.SetText(fmt.Sprintf("Couldn't connect to VM: %s\n", err))

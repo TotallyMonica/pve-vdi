@@ -316,7 +316,10 @@ func cloneTemplate(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm) (Proxmox
 
 	var newVm ProxmoxVm
 	var err error
-	newVm.VmNumber = rand2.Int32()
+
+	// This is completely stupid, but I guess the least race condition prone? Oh dear god
+	for newVm.VmNumber = rand2.Int32(); newVm.VmNumber > 100000; newVm.VmNumber = rand2.Int32() {
+	}
 
 	// Create data to clone the new VM to
 	data := url.Values{}
