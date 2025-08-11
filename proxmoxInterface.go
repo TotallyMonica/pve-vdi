@@ -15,6 +15,12 @@ import (
 	"time"
 )
 
+type ProxmoxJobStatus struct {
+	Exitstatus string `json:"exitstatus,omitempty"`
+	JobId      string `json:"upid"`
+	Status     string `json:"status"`
+}
+
 type ProxmoxCreds struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -45,6 +51,10 @@ type ProxmoxVm struct {
 
 type rawProxmoxInterfaces struct {
 	Data []ProxmoxInterfaces `json:"data"`
+}
+
+type rawProxmoxJobStatus struct {
+	Data ProxmoxJobStatus `json:"data"`
 }
 
 type ProxmoxInterfaces struct {
@@ -307,7 +317,7 @@ func getNodeAddresses(creds ProxmoxCreds, token ProxmoxAuth) ([]ProxmoxInterface
 	return parsedResponse.Data, nil
 }
 
-func cloneTemplate(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm) (ProxmoxVm, error) {
+func cloneTemplate(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm) (ProxmoxVm, ProxmoxJobStatus, error) {
 	// Boilerplate create cookie
 	authCookie := &http.Cookie{
 		Name:  "PVEAuthCookie",
@@ -331,7 +341,7 @@ func cloneTemplate(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm) (Proxmox
 	apiUrl := fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/qemu/%d/clone", creds.Address, vm.Node, vm.VmNumber)
 	cloneVmReq, err := http.NewRequest(http.MethodPost, apiUrl, bytes.NewBufferString(data.Encode()))
 	if err != nil {
-		return ProxmoxVm{}, fmt.Errorf("error while creating request: %+v\nurl: %s\n", err, apiUrl)
+		return ProxmoxVm{}, ProxmoxJobStatus{}, fmt.Errorf("error while creating request: %+v\nurl: %s\n", err, apiUrl)
 	}
 
 	// Add the auth cookies to the request
@@ -341,26 +351,77 @@ func cloneTemplate(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm) (Proxmox
 	// Perform the request
 	cloneVmResp, err := client.Do(cloneVmReq)
 	if err != nil {
-		return ProxmoxVm{}, fmt.Errorf("error while performing request: %+v\n", err)
+		return ProxmoxVm{}, ProxmoxJobStatus{}, fmt.Errorf("error while performing request: %+v\n", err)
 	}
 
 	if cloneVmResp.StatusCode != 200 {
 		response, err := io.ReadAll(cloneVmResp.Body)
 		if err != nil {
-			return ProxmoxVm{}, fmt.Errorf("got unexpected status code %d: %s\n", cloneVmResp.StatusCode, cloneVmResp.Status)
+			return ProxmoxVm{}, ProxmoxJobStatus{}, fmt.Errorf("got unexpected status code %d: %s\n", cloneVmResp.StatusCode, cloneVmResp.Status)
 		}
 
 		// Bodge solution for generating an invalid VM ID
 		if cloneVmResp.StatusCode == 400 && strings.Contains(fmt.Sprintf("%s", response), "invalid format - value does not look like a valid VM ID\\n") {
-			generatedVm, err := cloneTemplate(creds, token, vm)
-			return generatedVm, err
+			generatedVm, jobStatus, err := cloneTemplate(creds, token, vm)
+			return generatedVm, jobStatus, err
 		} else {
-			return ProxmoxVm{}, fmt.Errorf("got unexpected status code %d: %s: %s\n", cloneVmResp.StatusCode, cloneVmResp.Status, response)
+			return ProxmoxVm{}, ProxmoxJobStatus{}, fmt.Errorf("got unexpected status code %d: %s: %s\n", cloneVmResp.StatusCode, cloneVmResp.Status, response)
 		}
 	}
 
-	fmt.Printf("Status Code: %d\n", cloneVmResp.StatusCode)
-	fmt.Printf("Status: %s\n", cloneVmResp.Status)
+	var resp struct {
+		Data string `json:"data"`
+	}
 
-	return newVm, nil
+	body, err := io.ReadAll(cloneVmResp.Body)
+	if err != nil {
+		return ProxmoxVm{}, ProxmoxJobStatus{}, fmt.Errorf("Error while reading body: %v\n", err)
+	}
+
+	err = json.Unmarshal(body, &resp)
+	if err != nil {
+		return ProxmoxVm{}, ProxmoxJobStatus{}, fmt.Errorf("Error while unmarshalling body: %v\n", err)
+	}
+
+	return newVm, ProxmoxJobStatus{JobId: resp.Data}, nil
+}
+
+func getJobStatus(creds ProxmoxCreds, token ProxmoxAuth, job ProxmoxJobStatus) (ProxmoxJobStatus, error) {
+	authCookie := &http.Cookie{
+		Name:  "PVEAuthCookie",
+		Value: token.Data.Ticket,
+	}
+
+	apiUrl := fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/tasks/%s/status", creds.Address, creds.Server, job.JobId)
+
+	req, err := http.NewRequest(http.MethodPost, apiUrl, nil)
+	if err != nil {
+		return ProxmoxJobStatus{}, fmt.Errorf("error while creating request: %+v\nurl: %s\n", err, apiUrl)
+	}
+
+	req.AddCookie(authCookie)
+	req.Header.Add("CSRFPreventionToken", token.Data.CSRF)
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return ProxmoxJobStatus{}, fmt.Errorf("error while performing request: %+v\n", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return ProxmoxJobStatus{}, fmt.Errorf("unexpected status code %d returned from server: %s\n", resp.StatusCode, resp.Status)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ProxmoxJobStatus{}, fmt.Errorf("error while reading response from server: %v\n", err)
+	}
+
+	var jobStatus rawProxmoxJobStatus
+	err = json.Unmarshal(body, &jobStatus)
+	if err != nil {
+		return ProxmoxJobStatus{}, fmt.Errorf("error while unmarshalling json from server: %v\n", err)
+	}
+
+	return jobStatus.Data, nil
 }

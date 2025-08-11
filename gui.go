@@ -86,10 +86,18 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 				connectingLayout.AddWidget(statusLabel.QWidget)
 				connectingLayout.AddSpacing(statusLabel.Height())
 
-				clonedVm, err := cloneTemplate(creds, token, vm)
+				clonedVm, job, err := cloneTemplate(creds, token, vm)
 				if err != nil {
 					statusLabel.SetText(fmt.Sprintf("Error: %v\n", err))
 					log.Fatalf("Error while cloning VM: %v\n", err)
+				}
+
+				for status, err := getJobStatus(creds, token, job); err != nil && strings.Compare(status.Status, "stopped") == 0; status, err = getJobStatus(creds, token, job) {
+					fmt.Printf("Status: %s\n", status)
+					statusLabel.SetText("Status: Cloning")
+					statusLabel.Show()
+					connectingLayout.AddWidget(statusLabel.QWidget)
+					connectingLayout.AddSpacing(statusLabel.Height())
 				}
 
 				err = startVM(creds, token, clonedVm)
