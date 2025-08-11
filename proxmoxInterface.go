@@ -325,7 +325,7 @@ func cloneTemplate(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm) (Proxmox
 	data := url.Values{}
 	data.Set("newid", fmt.Sprint(newVm.VmNumber))
 	data.Set("storage", os.Getenv("PVE_VDI_STORAGE"))
-	data.Set("pool", "VDI")
+	data.Set("pool", os.Getenv("PVE_VDI_POOL"))
 
 	// Create POST request
 	apiUrl := fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/qemu/%d/clone", creds.Address, vm.Node, vm.VmNumber)
