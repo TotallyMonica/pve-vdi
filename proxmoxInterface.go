@@ -407,6 +407,7 @@ func getJobStatus(creds ProxmoxCreds, token ProxmoxAuth, job ProxmoxJobStatus) (
 	if err != nil {
 		return ProxmoxJobStatus{}, fmt.Errorf("error while performing request: %+v\n", err)
 	}
+	log.Printf("Performed job status lookup\nStatus code: %d\nStatus: %s\n", resp.StatusCode, resp.Status)
 
 	if resp.StatusCode != 200 {
 		return ProxmoxJobStatus{}, fmt.Errorf("unexpected status code %d returned from server: %s\n", resp.StatusCode, resp.Status)
@@ -416,12 +417,14 @@ func getJobStatus(creds ProxmoxCreds, token ProxmoxAuth, job ProxmoxJobStatus) (
 	if err != nil {
 		return ProxmoxJobStatus{}, fmt.Errorf("error while reading response from server: %v\n", err)
 	}
+	log.Printf("Read body\n")
 
 	var jobStatus rawProxmoxJobStatus
 	err = json.Unmarshal(body, &jobStatus)
 	if err != nil {
 		return ProxmoxJobStatus{}, fmt.Errorf("error while unmarshalling json from server: %v\n", err)
 	}
+	log.Printf("Parsed body\n")
 
 	return jobStatus.Data, nil
 }

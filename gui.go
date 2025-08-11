@@ -81,42 +81,9 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 				connectingLayout.AddWidget(vmNameLabel.QWidget)
 				connectingLayout.AddSpacing(vmNameLabel.Height())
 
-				statusLabel.SetText("Status: Starting")
 				statusLabel.Show()
 				connectingLayout.AddWidget(statusLabel.QWidget)
 				connectingLayout.AddSpacing(statusLabel.Height())
-
-				clonedVm, job, err := cloneTemplate(creds, token, vm)
-				if err != nil {
-					statusLabel.SetText(fmt.Sprintf("Error: %v\n", err))
-					log.Fatalf("Error while cloning VM: %v\n", err)
-				}
-
-				for status, err := getJobStatus(creds, token, job); err != nil && strings.Compare(status.Status, "stopped") == 0; status, err = getJobStatus(creds, token, job) {
-					fmt.Printf("Status: %s\n", status)
-					statusLabel.SetText("Status: Cloning")
-					statusLabel.Show()
-					connectingLayout.AddWidget(statusLabel.QWidget)
-					connectingLayout.AddSpacing(statusLabel.Height())
-				}
-
-				err = startVM(creds, token, clonedVm)
-				if err != nil {
-					return
-				}
-
-				// Create the status label for the child window
-				for status, err := getVmHealth(creds, token, clonedVm); err != nil && strings.Contains(status, "200 OK"); status, err = getVmHealth(creds, token, clonedVm) {
-					fmt.Printf("Status: %s\n", status)
-					statusLabel.SetText("Status: Starting")
-					statusLabel.Show()
-					connectingLayout.AddWidget(statusLabel.QWidget)
-					connectingLayout.AddSpacing(statusLabel.Height())
-				}
-
-				if err != nil {
-					statusLabel.SetText(fmt.Sprintf("Error: %s\n", err))
-				}
 
 				specifiedNode, err := login()
 				var specifiedToken ProxmoxAuth
@@ -126,7 +93,7 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 				}
 
 				// Check if the node the VM is on is the same one as we're logging into
-				if strings.Compare(specifiedNode.Server, clonedVm.Node) != 0 {
+				if strings.Compare(specifiedNode.Server, vm.Node) != 0 {
 					// Get the network of the first node
 					originalNodeAddrs, err := getNodeAddresses(creds, token)
 					if err != nil {
@@ -143,7 +110,7 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 					}
 
 					// Now get the new node's addresses
-					specifiedNode.Server = clonedVm.Node
+					specifiedNode.Server = vm.Node
 					newNodeAddrs, err := getNodeAddresses(specifiedNode, token)
 					if err != nil {
 						statusLabel.SetText(fmt.Sprintf("Error: %s\n", err))
@@ -164,6 +131,40 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 					}
 				} else {
 					specifiedToken = token
+				}
+
+				clonedVm, job, err := cloneTemplate(creds, token, vm)
+				if err != nil {
+					statusLabel.SetText(fmt.Sprintf("Error: %v\n", err))
+					log.Fatalf("Error while cloning VM: %v\n", err)
+				}
+				fmt.Printf("Sent clone VM Job\n")
+
+				for status, err := getJobStatus(creds, token, job); err != nil && strings.Compare(status.Status, "stopped") == 0; status, err = getJobStatus(creds, token, job) {
+					fmt.Printf("Status: %s\n", status)
+					statusLabel.SetText("Status: Cloning")
+					statusLabel.Show()
+					connectingLayout.AddWidget(statusLabel.QWidget)
+					connectingLayout.AddSpacing(statusLabel.Height())
+				}
+
+				err = startVM(creds, token, clonedVm)
+				if err != nil {
+					return
+				}
+				fmt.Printf("Starting VM")
+
+				// Create the status label for the child window
+				for status, err := getVmHealth(creds, token, clonedVm); err != nil && strings.Contains(status, "200 OK"); status, err = getVmHealth(creds, token, clonedVm) {
+					fmt.Printf("Status: %s\n", status)
+					statusLabel.SetText("Status: Starting")
+					statusLabel.Show()
+					connectingLayout.AddWidget(statusLabel.QWidget)
+					connectingLayout.AddSpacing(statusLabel.Height())
+				}
+
+				if err != nil {
+					statusLabel.SetText(fmt.Sprintf("Error: %s\n", err))
 				}
 
 				statusLabel.SetText("Started!")
