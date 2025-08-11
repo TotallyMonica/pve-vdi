@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -181,6 +180,7 @@ func getVmHealth(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm) (string, e
 	if err != nil {
 		return "", fmt.Errorf("error while performing request: %+v\n", err)
 	}
+
 	return resp.Status, nil
 }
 
@@ -318,18 +318,18 @@ func cloneTemplate(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm) (Proxmox
 	var err error
 
 	// This is completely stupid, but I guess the least race condition prone? Oh dear god
-	for newVm.VmNumber = rand2.Int32(); newVm.VmNumber > 100000; newVm.VmNumber = rand2.Int32() {
+	for newVm.VmNumber = rand2.Int32(); newVm.VmNumber < 100000; newVm.VmNumber = rand2.Int32() {
 	}
 
 	// Create data to clone the new VM to
 	data := url.Values{}
-	data.Set("newid", strconv.FormatInt(int64(newVm.VmNumber), 10))
-	data.Set("node", newVm.Node)
-	data.Set("vmid", strconv.FormatInt(int64(vm.VmNumber), 10))
+	data.Set("newid", fmt.Sprint(newVm.VmNumber))
+	data.Set("storage", os.Getenv("PVE_VDI_STORAGE"))
+	data.Set("pool", "VDI")
 
 	// Create POST request
-	apiUrl := fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/qemu/%d/clone", creds.Address, creds.Server, vm.VmNumber)
-	cloneVmReq, err := http.NewRequest(http.MethodPost, apiUrl, nil)
+	apiUrl := fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/qemu/%d/clone", creds.Address, vm.Node, vm.VmNumber)
+	cloneVmReq, err := http.NewRequest(http.MethodPost, apiUrl, bytes.NewBufferString(data.Encode()))
 	if err != nil {
 		return ProxmoxVm{}, fmt.Errorf("error while creating request: %+v\nurl: %s\n", err, apiUrl)
 	}
@@ -342,6 +342,21 @@ func cloneTemplate(creds ProxmoxCreds, token ProxmoxAuth, vm ProxmoxVm) (Proxmox
 	cloneVmResp, err := client.Do(cloneVmReq)
 	if err != nil {
 		return ProxmoxVm{}, fmt.Errorf("error while performing request: %+v\n", err)
+	}
+
+	if cloneVmResp.StatusCode != 200 {
+		response, err := io.ReadAll(cloneVmResp.Body)
+		if err != nil {
+			return ProxmoxVm{}, fmt.Errorf("got unexpected status code %d: %s\n", cloneVmResp.StatusCode, cloneVmResp.Status)
+		}
+
+		// Bodge solution for generating an invalid VM ID
+		if cloneVmResp.StatusCode == 400 && strings.Contains(fmt.Sprintf("%s", response), "invalid format - value does not look like a valid VM ID\\n") {
+			generatedVm, err := cloneTemplate(creds, token, vm)
+			return generatedVm, err
+		} else {
+			return ProxmoxVm{}, fmt.Errorf("got unexpected status code %d: %s: %s\n", cloneVmResp.StatusCode, cloneVmResp.Status, response)
+		}
 	}
 
 	fmt.Printf("Status Code: %d\n", cloneVmResp.StatusCode)

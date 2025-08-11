@@ -56,10 +56,6 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 
 			// Start the VM (if necessary) and connect to vm.VmNumber the VM via SPICE.
 			vmButton.OnClicked(func() {
-				err := startVM(creds, token, vm)
-				if err != nil {
-					return
-				}
 				// Create the child window
 				fmt.Printf("Connecting to %s\n", vmButton.Text())
 				connectingWindow := qt6.NewQWidget2()
@@ -96,8 +92,14 @@ func buildWindow(vms ProxmoxVmList, creds ProxmoxCreds, token ProxmoxAuth) {
 					log.Fatalf("Error while cloning VM: %v\n", err)
 				}
 
+				err = startVM(creds, token, clonedVm)
+				if err != nil {
+					return
+				}
+
 				// Create the status label for the child window
-				for status, err := getVmHealth(creds, token, clonedVm); err != nil && !strings.Contains(status, "200 OK"); status, err = getVmHealth(creds, token, clonedVm) {
+				for status, err := getVmHealth(creds, token, clonedVm); err != nil && strings.Contains(status, "200 OK"); status, err = getVmHealth(creds, token, clonedVm) {
+					fmt.Printf("Status: %s\n", status)
 					statusLabel.SetText("Status: Starting")
 					statusLabel.Show()
 					connectingLayout.AddWidget(statusLabel.QWidget)
