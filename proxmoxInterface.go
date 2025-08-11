@@ -394,7 +394,7 @@ func getJobStatus(creds ProxmoxCreds, token ProxmoxAuth, job ProxmoxJobStatus) (
 
 	apiUrl := fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/tasks/%s/status", creds.Address, creds.Server, job.JobId)
 
-	req, err := http.NewRequest(http.MethodPost, apiUrl, nil)
+	req, err := http.NewRequest(http.MethodGet, apiUrl, nil)
 	if err != nil {
 		return ProxmoxJobStatus{}, fmt.Errorf("error while creating request: %+v\nurl: %s\n", err, apiUrl)
 	}
